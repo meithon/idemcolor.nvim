@@ -114,7 +114,23 @@ local function attach(bufnr, lang)
                         hl_group_of_identifier[text] = group_name
                     end
                     local start_row, start_col, end_row, end_col = node:range()
-                    vim.api.nvim_buf_set_extmark(bufnr, namespace, start_row, start_col, {
+                    if start_row < 0 or end_row < start_row then
+                        goto continue
+                    end
+
+                    local start_line = vim.api.nvim_buf_get_lines(bufnr, start_row, start_row + 1, true)[1]
+                    local end_line = vim.api.nvim_buf_get_lines(bufnr, end_row, end_row + 1, true)[1]
+                    if start_line == nil or end_line == nil then
+                        goto continue
+                    end
+
+                    start_col = math.max(0, math.min(start_col, #start_line))
+                    end_col = math.max(0, math.min(end_col, #end_line))
+                    if (end_row == start_row and end_col <= start_col) or (end_row < start_row) then
+                        goto continue
+                    end
+
+                    pcall(vim.api.nvim_buf_set_extmark, bufnr, namespace, start_row, start_col, {
                         end_row = end_row,
                         end_col = end_col,
                         hl_group = hl_group_of_identifier[text],
@@ -122,6 +138,7 @@ local function attach(bufnr, lang)
                     })
                 end
             end
+            ::continue::
         end
     end
 
