@@ -149,10 +149,43 @@ local function attach(bufnr, lang)
 
     parser:register_cbs({
         on_changedtree = function(changes, tree)
-            if tree then
-                highlight_tree(tree:root(), 0, -1)
+            if not tree then
+                return
             end
-        end
+            if not vim.api.nvim_buf_is_loaded(bufnr) then
+                return
+            end
+            local root = tree:root()
+            -- During buffer reload/detach, Neovim fires on_changedtree with the
+            -- pre-reload (stale) tree (LanguageTree:invalidate(true)): its ranges
+            -- refer to the old text, so re-placing extmarks from it would offset
+            -- every highlight. Whole-buffer trees whose size no longer matches
+            -- the buffer are stale; skip and let on_detach re-attach to the
+            -- fresh parser.
+            local ok_start, _, _, start_byte = pcall(root.start, root)
+            local ok_end, _, _, end_byte = pcall(root.end_, root)
+            if
+                ok_start
+                and ok_end
+                and start_byte == 0
+                and end_byte
+                    ~= vim.api.nvim_buf_get_offset(bufnr, vim.api.nvim_buf_line_count(bufnr))
+            then
+                return
+            end
+            highlight_tree(root, 0, -1)
+        end,
+        on_detach = function()
+            -- Buffer reload detaches the parser and its callbacks; a fresh
+            -- parser is created on the next get_parser(). Drop the attachment
+            -- flag and re-attach so extmarks keep tracking the new parser.
+            attached_buffers[bufnr] = nil
+            vim.schedule(function()
+                if vim.api.nvim_buf_is_valid(bufnr) and vim.api.nvim_buf_is_loaded(bufnr) then
+                    attach(bufnr, lang)
+                end
+            end)
+        end,
     })
 end
 
